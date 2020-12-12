@@ -32,9 +32,9 @@ func main() {
 		if _, ok := mapping[u.Path]; ok {
 			req.URL.Path = path.Join(u.Path, req.URL.Path)
 			mapping[u.Path].ServeHTTP(res, req)
+		} else {
+			http.NotFound(res, req)
 		}
-
-		http.NotFound(res, req)
 	})
 
 	http.ListenAndServe(":8080", nil)
