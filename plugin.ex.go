@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/evanmags/broccoli/pdk"
 )
 
@@ -9,7 +11,9 @@ var Route = pdk.Route{
 	Port: 8080,
 }
 
-func ApplyInboundPolicy() {}
+func ApplyInboundPolicy(res http.ResponseWriter, req *http.Request) (http.ResponseWriter, *http.Request) {
+	return res, req
+}
 
 var Service = pdk.Upstream{
 	Protocol: "https",
@@ -19,4 +23,6 @@ var Service = pdk.Upstream{
 	Methods:  []string{"GET"},
 }
 
-func ApplyOutboundPolicy() {}
+func ApplyOutboundPolicy(res http.ResponseWriter, req *http.Request) (http.ResponseWriter, *http.Request) {
+	return res, req
+}

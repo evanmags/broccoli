@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"plugin"
 
-	"github.com/evanmags/broccoli/pdk"
-
 	"github.com/evanmags/broccoli/internals"
 )
 
@@ -22,8 +20,7 @@ func main() {
 		panic(err)
 	}
 
-	plugins := loadPlugins(config)
-	mapping := setPluginsAsHandlers(plugins)
+	mapping := loadPluginsToRoutes(config)
 
 	// This is the defualt handler, It allows us to handle relative proxied paths that
 	// are absolute in the response... hacky and need to do research on how to improve.
@@ -41,36 +38,20 @@ func main() {
 	http.ListenAndServe(":8080", nil)
 }
 
-func loadPlugins(config *internals.Config) []*plugin.Plugin {
+func loadPluginsToRoutes(config *internals.Config) map[string]*internals.Route {
 	matches, err := filepath.Glob(config.PluginsDir + "*/*.so")
 	if err != nil {
 		panic(err)
 	}
 
-	plugins := []*plugin.Plugin{}
+	serviceMap := map[string]*internals.Route{}
 
 	for _, file := range matches {
 		plg, err := plugin.Open(file)
 		if err != nil {
 			panic(err)
 		}
-		plugins = append(plugins, plg)
-	}
-
-	return plugins
-}
-
-func setPluginsAsHandlers(plugins []*plugin.Plugin) map[string]*internals.Route {
-	serviceMap := map[string]*internals.Route{}
-
-	for _, p := range plugins {
-		r, _ := p.Lookup("Route")
-		plgRoute := r.(*pdk.Route)
-
-		s, _ := p.Lookup("Service")
-		plgService := s.(*pdk.Upstream)
-
-		route := internals.NewRoute(plgRoute.Uri, *plgService)
+		route := internals.NewRouteFromPlugin(plg)
 
 		http.Handle(route.Uri, route)
 		serviceMap[route.Uri] = route
