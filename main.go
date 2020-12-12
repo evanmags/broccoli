@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"path"
@@ -17,11 +16,13 @@ import (
 // this is what runs on 'startup' once the server is installed and running
 // the daemon can be interfaced with using the `broc` command
 
-var config = getConfig()
-
 func main() {
-	fmt.Println(config["plugin_dir"])
-	plugins := loadPlugins()
+	config, err := internals.LoadConfig("./broccoli.config.yaml")
+	if err != nil {
+		panic(err)
+	}
+
+	plugins := loadPlugins(config)
 	mapping := setPluginsAsHandlers(plugins)
 
 	// This is the defualt handler, It allows us to handle relative proxied paths that
@@ -40,15 +41,8 @@ func main() {
 	http.ListenAndServe(":8080", nil)
 }
 
-func getConfig() map[string]string {
-	// TODO: Implement read from yaml
-	return map[string]string{
-		"plugin_dir": "./",
-	}
-}
-
-func loadPlugins() []*plugin.Plugin {
-	matches, err := filepath.Glob(config["plugin_dir"] + "*/*.so")
+func loadPlugins(config *internals.Config) []*plugin.Plugin {
+	matches, err := filepath.Glob(config.PluginsDir + "*/*.so")
 	if err != nil {
 		panic(err)
 	}
