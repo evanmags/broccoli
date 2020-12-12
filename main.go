@@ -27,9 +27,9 @@ func main() {
 	http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
 		u, _ := url.Parse(req.Referer())
 
-		if _, ok := mapping[u.Path]; ok {
+		if route, ok := mapping[u.Path]; ok {
 			req.URL.Path = path.Join(u.Path, req.URL.Path)
-			mapping[u.Path].ServeHTTP(res, req)
+			route.ServeHTTP(res, req)
 		} else {
 			http.NotFound(res, req)
 		}
