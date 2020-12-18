@@ -1,11 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"path"
 	"path/filepath"
 	"plugin"
+
+	"github.com/evanmags/broccoli/internals/api"
 
 	"github.com/evanmags/broccoli/internals"
 )
@@ -13,17 +16,18 @@ import (
 // The 'main' package of this program is just used to initiate the server
 // this is what runs on 'startup' once the server is installed and running
 // the daemon can be interfaced with using the `broc` command
-
 func main() {
 	config, err := internals.LoadConfig("./broccoli.config.yaml")
 	if err != nil {
 		panic(err)
 	}
 
-	mapping := loadPluginsToRoutes(config)
+	mapping := loadPluginsToRoutes(config.PluginsDir)
 
 	// This is the defualt handler, It allows us to handle relative proxied paths that
 	// are absolute in the response... hacky and need to do research on how to improve.
+	// TODO: handle recursive searches of referrer paths, this is bound to be a buggy
+	//       piece of code to handle.
 	http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
 		u, _ := url.Parse(req.Referer())
 
@@ -35,11 +39,15 @@ func main() {
 		}
 	})
 
-	http.ListenAndServe(":8080", nil)
+	go api.InitApi(config.AdminPort, mapping)
+
+	http.ListenAndServe(fmt.Sprintf(":%d", config.GatewayPort), nil)
 }
 
-func loadPluginsToRoutes(config *internals.Config) map[string]*internals.Route {
-	matches, err := filepath.Glob(config.PluginsDir + "*/*.so")
+// consumes a config pointer and returns a map of urls that point to the route
+// object. This function also attaches handles to the server.
+func loadPluginsToRoutes(pluginsDir string) map[string]*internals.Route {
+	matches, err := filepath.Glob(pluginsDir + "*/*.so")
 	if err != nil {
 		panic(err)
 	}
