@@ -12,15 +12,17 @@ import (
 )
 
 type Route struct {
-	Uri           string
-	Upstream      *url.URL
-	Proxy         *httputil.ReverseProxy
-	InboundPolicy func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request)
+	Uri            string
+	Upstream       *url.URL
+	Proxy          *httputil.ReverseProxy
+	AllowedMethods []string
+	InboundPolicy  func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request)
 	// OutboundPolicy func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request)
 }
 
-func NewRoute(uri string,
-	dest pdk.Upstream,
+func NewRoute(
+	listener *pdk.Route,
+	dest *pdk.Upstream,
 	inboundPolicy func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request),
 ) *Route {
 	upstreamURL := &url.URL{
@@ -29,10 +31,11 @@ func NewRoute(uri string,
 	}
 
 	return &Route{
-		Uri:           uri,
-		Upstream:      upstreamURL,
-		Proxy:         httputil.NewSingleHostReverseProxy(upstreamURL),
-		InboundPolicy: inboundPolicy,
+		Uri:            listener.Uri,
+		Upstream:       upstreamURL,
+		Proxy:          httputil.NewSingleHostReverseProxy(upstreamURL),
+		AllowedMethods: listener.Methods,
+		InboundPolicy:  inboundPolicy,
 	}
 }
 
@@ -41,7 +44,7 @@ func NewRouteFromPlugin(p *plugin.Plugin) *Route {
 	s := loadPluginMember(p, "Service").(*pdk.Upstream)
 	ibp := loadPluginMember(p, "ApplyInboundPolicy").(func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request))
 
-	return NewRoute(r.Uri, *s, ibp)
+	return NewRoute(r, s, ibp)
 }
 
 func loadPluginMember(p *plugin.Plugin, name string) plugin.Symbol {
@@ -56,9 +59,29 @@ func loadPluginMember(p *plugin.Plugin, name string) plugin.Symbol {
 func (r *Route) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	fmt.Println("forwarding on", r.Uri)
 
-	res, req = r.InboundPolicy(res, req)
+	// method verifications
+	if !r.MethodIsAllowed(req.Method) {
+		http.Error(res, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
 
-	req.URL.Path = strings.TrimPrefix(req.RequestURI, r.Uri)
-	// req.Host = r.Upstream.Host
+	res, req = r.InboundPolicy(res, req)
+	print(req.RequestURI)
+	clean := strings.Split(req.RequestURI, "?")
+	print("clean", clean)
+	req.URL.Path = strings.TrimPrefix(clean[0], r.Uri)
+	println(req.URL.Query().Encode())
+	req.RequestURI = req.URL.Path
+	req.Host = r.Upstream.Host
 	r.Proxy.ServeHTTP(res, req)
+}
+
+func (r *Route) MethodIsAllowed(method string) bool {
+	for _, allowed := range r.AllowedMethods {
+		if allowed == method {
+			return true
+		}
+	}
+
+	return false
 }

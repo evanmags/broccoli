@@ -7,7 +7,9 @@ import (
 )
 
 type Config struct {
-	PluginsDir string `yaml:"plugins_dir"`
+	GatewayPort int    `yaml:"gateway_port"`
+	AdminPort   int    `yaml:"admin_port"`
+	PluginsDir  string `yaml:"plugins_dir"`
 }
 
 func LoadConfig(configPath string) (*Config, error) {
