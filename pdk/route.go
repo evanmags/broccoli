@@ -1,6 +1,6 @@
 package pdk
 
 type Route struct {
-	Uri  string
-	Port int
+	Uri     string
+	Methods []string // http.Method*
 }

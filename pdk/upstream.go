@@ -5,5 +5,4 @@ type Upstream struct {
 	Host     string
 	Port     int
 	Uri      string
-	Methods  []string
 }
