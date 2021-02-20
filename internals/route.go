@@ -2,6 +2,7 @@ package internals
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -16,72 +17,88 @@ type Route struct {
 	Upstream       *url.URL
 	Proxy          *httputil.ReverseProxy
 	AllowedMethods []string
-	InboundPolicy  func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request)
-	// OutboundPolicy func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request)
 }
 
 func NewRoute(
-	listener *pdk.Route,
-	dest *pdk.Upstream,
-	inboundPolicy func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request),
+	listener pdk.Listener,
+	dest pdk.Upstream,
+	middleware []pdk.Middleware,
 ) *Route {
 	upstreamURL := &url.URL{
 		Scheme: dest.Protocol,
 		Host:   fmt.Sprintf("%s:%d", dest.Host, dest.Port),
 	}
 
-	return &Route{
-		Uri:            listener.Uri,
+	r := &Route{
+		Uri:            listener.URI,
 		Upstream:       upstreamURL,
 		Proxy:          httputil.NewSingleHostReverseProxy(upstreamURL),
 		AllowedMethods: listener.Methods,
-		InboundPolicy:  inboundPolicy,
 	}
+
+	origDirector := r.Proxy.Director
+	r.Proxy.Director = func(req *http.Request) {
+		origDirector(req)
+		r.ensureProxyPathStripped(req)
+		for _, mw := range middleware {
+			mw.InboundAccess(req)
+		}
+	}
+
+	r.Proxy.ModifyResponse = func(resp *http.Response) error {
+		for _, mw := range middleware {
+			if err := mw.OutboundAccess(resp); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return r
 }
 
 func NewRouteFromPlugin(p *plugin.Plugin) *Route {
-	r := loadPluginMember(p, "Route").(*pdk.Route)
-	s := loadPluginMember(p, "Service").(*pdk.Upstream)
-	ibp := loadPluginMember(p, "ApplyInboundPolicy").(func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request))
-
-	return NewRoute(r, s, ibp)
+	proxy := loadPluginMember(p)
+	return NewRoute(proxy.Listener, proxy.Upstream, proxy.Middleware)
 }
 
-func loadPluginMember(p *plugin.Plugin, name string) plugin.Symbol {
-	member, err := p.Lookup(name)
+func loadPluginMember(p *plugin.Plugin) pdk.Proxy {
+	member, err := p.Lookup("BuildProxy")
 	if err != nil {
 		panic(err)
 	}
+	buildProxy := member.(func() pdk.Proxy)
 
-	return member
+	return buildProxy()
 }
 
 func (r *Route) ServeHTTP(res http.ResponseWriter, req *http.Request) {
-	fmt.Println("forwarding on", r.Uri)
+	log.Printf("Forwarding '%s' on '%s'", req.URL.Path, r.Uri)
 
 	// method verifications
 	if !r.MethodIsAllowed(req.Method) {
+		log.Printf("Method '%s' Not Allowed On Route '%s'", req.Method, req.URL.Path)
 		http.Error(res, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
 
-	res, req = r.InboundPolicy(res, req)
-	print(req.RequestURI)
-	clean := strings.Split(req.RequestURI, "?")
-	print("clean", clean)
-	req.URL.Path = strings.TrimPrefix(clean[0], r.Uri)
-	println(req.URL.Query().Encode())
-	req.RequestURI = req.URL.Path
-	req.Host = r.Upstream.Host
 	r.Proxy.ServeHTTP(res, req)
 }
 
 func (r *Route) MethodIsAllowed(method string) bool {
 	for _, allowed := range r.AllowedMethods {
 		if allowed == method {
+			log.Printf("Method '%s' Allowed On Route '%s'", method, r.Uri)
 			return true
 		}
 	}
 
 	return false
+}
+
+func (r *Route) ensureProxyPathStripped(req *http.Request) {
+	for strings.HasPrefix(req.URL.Path, r.Uri) {
+		log.Printf("Stripping Path '%s' from '%s'", r.Uri, req.URL.Path)
+		req.URL.Path = strings.Replace(req.URL.Path, r.Uri, "/", 1)
+	}
 }
