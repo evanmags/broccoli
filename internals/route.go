@@ -17,6 +17,7 @@ type Route struct {
 	Upstream       *url.URL
 	Proxy          *httputil.ReverseProxy
 	AllowedMethods []string
+	Middleware     []pdk.Middleware
 }
 
 func NewRoute(
@@ -34,6 +35,7 @@ func NewRoute(
 		Upstream:       upstreamURL,
 		Proxy:          httputil.NewSingleHostReverseProxy(upstreamURL),
 		AllowedMethods: listener.Methods,
+		Middleware:     middleware,
 	}
 
 	origDirector := r.Proxy.Director
@@ -80,6 +82,13 @@ func (r *Route) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		log.Printf("Method '%s' Not Allowed On Route '%s'", req.Method, req.URL.Path)
 		http.Error(res, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
+	}
+
+	for _, mw := range r.Middleware {
+		if !mw.Enforcer(res, req) {
+			log.Printf("Failed Enforcer Stage in Middleware '%s'", mw.Name)
+			return
+		}
 	}
 
 	r.Proxy.ServeHTTP(res, req)

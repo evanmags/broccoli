@@ -15,14 +15,8 @@ func NewProxy(listener Listener, upstream Upstream) *Proxy {
 	}
 }
 
-func (p *Proxy) AddMiddleware(mw IMiddleware, priorityIn, priorityOut int) {
-	newMW := Middleware{
-		InboundAccess:  mw.InboundAccess,
-		OutboundAccess: mw.OutboundAccess,
-	}
-	newMW.Priority.In = priorityIn
-	newMW.Priority.Out = priorityIn
-	p.Middleware = append(p.Middleware, newMW)
+func (p *Proxy) AddMiddleware(mw Middleware) {
+	p.Middleware = append(p.Middleware, mw)
 }
 
 type Listener struct {
@@ -32,24 +26,20 @@ type Listener struct {
 }
 
 type Middleware struct {
+	Name           string
 	InboundAccess  func(*http.Request)
+	Enforcer       func(http.ResponseWriter, *http.Request) bool
 	OutboundAccess func(*http.Response) error
-	Priority       struct {
-		In  int
-		Out int
+}
+
+func NewMiddleware(name string) Middleware {
+	newMW := Middleware{
+		Name:           name,
+		InboundAccess:  func(r *http.Request) {},
+		Enforcer:       func(http.ResponseWriter, *http.Request) bool { return true },
+		OutboundAccess: func(r *http.Response) error { return nil },
 	}
-}
-
-type IMiddleware interface {
-	InboundAccess(*http.Request)
-	OutboundAccess(*http.Response) error
-}
-
-func NewMiddleware(priorityIn, priorityOut int) *Middleware {
-	newMW := Middleware{}
-	newMW.Priority.In = priorityIn
-	newMW.Priority.Out = priorityIn
-	return &newMW
+	return newMW
 }
 
 type Upstream struct {
