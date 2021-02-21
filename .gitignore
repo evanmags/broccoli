@@ -17,3 +17,6 @@
 # dev and test resources
 /plugins
 broccoli.config.yaml
+
+# exclude the 
+/bin
